@@ -41,40 +41,37 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  console.log('POST request received');
-  const body = await request.json();
-  console.log('Request body:', body);
-  const { name, description, url, category_id } = body;
+  const { name, description, url, category_id } = await request.json();
+  if (!name || !description || !url) {
+    return NextResponse.json({ error: '名前、説明、URLは必須です' }, { status: 400 });
+  }
 
   const { data, error } = await supabase
     .from('gpts')
     .insert({ name, description, url, category_id })
-    .select();
+    .select()
+    .single();
 
-  if (error) {
-    console.error('Error inserting GPT:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  console.log('Inserted GPT:', data);
-  return NextResponse.json(data[0]);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data, { status: 201 });
 }
 
 export async function PUT(request: Request) {
-  const body = await request.json();
-  const { id, name, description, url, category_id } = body;
+  const { id, name, description, url, category_id } = await request.json();
+  if (!id || !name || !description || !url) {
+    return NextResponse.json({ error: 'ID、名前、説明、URLは必須です' }, { status: 400 });
+  }
 
   const { data, error } = await supabase
     .from('gpts')
     .update({ name, description, url, category_id })
     .eq('id', id)
-    .select();
+    .select()
+    .single();
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json(data[0]);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!data) return NextResponse.json({ error: 'GPTが見つかりません' }, { status: 404 });
+  return NextResponse.json(data);
 }
 
 export async function DELETE(request: Request) {

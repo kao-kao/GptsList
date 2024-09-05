@@ -14,24 +14,30 @@ import { Badge } from "@/components/ui/badge"
 import { PlusCircle, Trash2, Edit2, Search, X, ExternalLink } from 'lucide-react'
 import { supabase } from '@/lib/supabase';
 
+interface Category {
+  id: number;
+  name: string;
+}
+
 interface GPT {
   id: string;
   name: string;
   description: string;
   url: string;
-  category: string;
-  categories?: { id: number; name: string };
+  category_id: number | null;
 }
 
 export function GpTs推奨リスト() {
   const [gpts, setGpts] = useState<GPT[]>([]);
-  const [categories, setCategories] = useState<string[]>(["ライティング", "プログラミング", "語学", "ビジネス", "デザイン"]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [activeTab, setActiveTab] = useState('browse');
   const [searchTerm, setSearchTerm] = useState('');
-  const [newGpt, setNewGpt] = useState<Omit<GPT, 'id'>>({ name: '', description: '', url: '', category: '' });
+  const [newGpt, setNewGpt] = useState<Omit<GPT, 'id'>>({ name: '', description: '', url: '', category_id: null });
   const [editingGpt, setEditingGpt] = useState<GPT | null>(null);
   const [newCategory, setNewCategory] = useState('');
-  const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authCode, setAuthCode] = useState('');
 
   const filteredAndGroupedGpts = useMemo(() => {
     console.log('Filtering and grouping GPTs. Current gpts:', gpts);
@@ -41,12 +47,12 @@ export function GpTs推奨リスト() {
     const filtered = gpts.filter(gpt => 
       gpt.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       gpt.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (gpt.category && gpt.category.toLowerCase().includes(searchTerm.toLowerCase()))
+      (gpt.category_id !== null && categories.find(cat => cat.id === gpt.category_id)?.name.toLowerCase().includes(searchTerm.toLowerCase()))
     );
     console.log('Filtered GPTs:', filtered);
 
     const grouped = filtered.reduce((acc, gpt) => {
-      const category = gpt.category || '未分類';
+      const category = gpt.category_id !== null ? categories.find(cat => cat.id === gpt.category_id)?.name || '未分類' : '未分類';
       if (!acc[category]) {
         acc[category] = [];
       }
@@ -59,17 +65,14 @@ export function GpTs推奨リスト() {
   }, [gpts, categories, searchTerm]);
 
   const addGpt = async () => {
-    if (newGpt.name && newGpt.description && newGpt.url && newGpt.category) {
+    if (newGpt.name && newGpt.description && newGpt.url && newGpt.category_id !== null) {
       try {
         const response = await fetch('/api/gpts', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            ...newGpt,
-            category_id: categories.findIndex(cat => cat === newGpt.category) + 1
-          }),
+          body: JSON.stringify(newGpt),
         });
 
         if (!response.ok) {
@@ -78,7 +81,7 @@ export function GpTs推奨リスト() {
 
         const addedGpt = await response.json();
         setGpts([...gpts, addedGpt]);
-        setNewGpt({ name: '', description: '', url: '', category: '' });
+        setNewGpt({ name: '', description: '', url: '', category_id: null });
         setActiveTab('browse');
       } catch (error) {
         console.error('Error adding GPT:', error);
@@ -103,7 +106,7 @@ export function GpTs推奨リスト() {
   };
 
   const addCategory = async () => {
-    if (newCategory && !categories.includes(newCategory)) {
+    if (newCategory && !categories.some(cat => cat.name === newCategory)) {
       try {
         const response = await fetch('/api/categories', {
           method: 'POST',
@@ -114,17 +117,14 @@ export function GpTs推奨リスト() {
         });
 
         if (!response.ok) {
-          throw new Error('Failed to add category');
+          throw new Error('カテゴリの追加に失敗しました');
         }
 
         const addedCategory = await response.json();
-        setCategories([...categories, addedCategory.name]);
+        setCategories(prevCategories => [...prevCategories, addedCategory]);
         setNewCategory('');
-        
-        // カテゴリ追加後にデータを再取得
-        fetchData();
       } catch (error) {
-        console.error('Error adding category:', error);
+        console.error('カテゴリの追加中にエラーが発生しました:', error);
       }
     }
   };
@@ -137,44 +137,40 @@ export function GpTs推奨リスト() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ id: categories.indexOf(editingCategory) + 1, name: newCategory }),
+          body: JSON.stringify({ id: editingCategory.id, name: newCategory }),
         });
 
         if (!response.ok) {
-          throw new Error('Failed to update category');
+          throw new Error('カテゴリの更新に失敗しました');
         }
 
-        setCategories(categories.map(c => c === editingCategory ? newCategory : c));
-        setGpts(gpts.map(gpt => gpt.category === editingCategory ? {...gpt, category: newCategory} : gpt));
+        setCategories(prevCategories => prevCategories.map(c => c.id === editingCategory.id ? { ...c, name: newCategory } : c));
+        setGpts(prevGpts => prevGpts.map(gpt => gpt.category_id === editingCategory.id ? {...gpt, category_id: editingCategory.id} : gpt));
         setEditingCategory(null);
         setNewCategory('');
-        
-        // カテゴリ更新後にデータを再取得
-        fetchData();
       } catch (error) {
-        console.error('Error updating category:', error);
+        console.error('カテゴリの更新中にエラーが発生しました:', error);
       }
     }
   };
 
-  const removeCategory = async (categoryToRemove: string) => {
+  const removeCategory = async (categoryId: number) => {
     try {
-      const categoryId = categories.findIndex(cat => cat === categoryToRemove) + 1;
       const response = await fetch(`/api/categories?id=${categoryId}`, {
         method: 'DELETE',
       });
 
+      const responseData = await response.json();
+
       if (!response.ok) {
-        throw new Error('カテゴリの削除に失敗しました');
+        throw new Error(responseData.error || 'カテゴリの削除に失敗しました');
       }
 
-      setCategories(categories.filter(c => c !== categoryToRemove));
-      setGpts(gpts.map(gpt => gpt.category === categoryToRemove ? {...gpt, category: '未分類'} : gpt));
-      
-      // カテゴリ削除後にデータを再取得
-      fetchData();
+      setCategories(prevCategories => prevCategories.filter(c => c.id !== categoryId));
+      setGpts(prevGpts => prevGpts.map(gpt => gpt.category_id === categoryId ? {...gpt, category_id: null} : gpt));
     } catch (error) {
       console.error('カテゴリの削除中にエラーが発生しました:', error);
+      alert('カテゴリの削除中にエラーが発生しました: ' + (error instanceof Error ? error.message : String(error)));
     }
   };
 
@@ -196,7 +192,7 @@ export function GpTs推奨リスト() {
       }
       const categoriesData = await categoriesResponse.json();
       console.log('Fetched categories:', categoriesData);
-      setCategories(categoriesData.map((cat: any) => cat.name));
+      setCategories(categoriesData);
     } catch (error) {
       console.error('Error fetching data:', error);
     }
@@ -226,10 +222,7 @@ export function GpTs推奨リスト() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            ...editingGpt,
-            category_id: categories.findIndex(cat => cat === editingGpt.category) + 1
-          }),
+          body: JSON.stringify(editingGpt),
         });
 
         if (!response.ok) {
@@ -260,6 +253,15 @@ export function GpTs推奨リスト() {
       setGpts(gpts.filter(gpt => gpt.id !== id));
     } catch (error) {
       console.error('GPTの削除中にエラーが発生しました:', error);
+    }
+  };
+
+  const handleAuth = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (authCode === '0411') {
+      setIsAuthenticated(true);
+    } else {
+      alert('認証コードが正しくありません。');
     }
   };
 
@@ -339,159 +341,183 @@ export function GpTs推奨リスト() {
           </Card>
         </TabsContent>
         <TabsContent value="manage">
-          <div className="grid gap-8 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>GPT管理</CardTitle>
-                <CardDescription>新しいGPTの追加や既存のGPTの編集ができます</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={(e) => { e.preventDefault(); editingGpt ? updateGpt() : addGpt(); }} className="space-y-4">
-                  <div>
-                    <Label htmlFor="name">名前</Label>
-                    <Input 
-                      id="name" 
-                      value={editingGpt ? editingGpt.name : newGpt.name}
-                      onChange={(e) => editingGpt ? setEditingGpt({...editingGpt, name: e.target.value}) : setNewGpt({...newGpt, name: e.target.value})}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="description">説明</Label>
-                    <Textarea 
-                      id="description" 
-                      value={editingGpt ? editingGpt.description : newGpt.description}
-                      onChange={(e) => editingGpt ? setEditingGpt({...editingGpt, description: e.target.value}) : setNewGpt({...newGpt, description: e.target.value})}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="url">URL</Label>
-                    <Input 
-                      id="url" 
-                      value={editingGpt ? editingGpt.url : newGpt.url}
-                      onChange={(e) => editingGpt ? setEditingGpt({...editingGpt, url: e.target.value}) : setNewGpt({...newGpt, url: e.target.value})}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="category">カテゴリ</Label>
-                    <Select 
-                      value={editingGpt ? editingGpt.category : newGpt.category}
-                      onValueChange={(value) => editingGpt ? setEditingGpt({...editingGpt, category: value}) : setNewGpt({...newGpt, category: value})}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="カテゴリを選択" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map((category) => (
-                          <SelectItem key={category} value={category}>{category}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button type="submit">
-                    {editingGpt ? '更新' : '追加'}
-                  </Button>
-                  {editingGpt && (
-                    <Button type="button" variant="outline" onClick={() => setEditingGpt(null)}>
-                      キャンセル
+          {isAuthenticated ? (
+            <div className="grid gap-8 md:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>GPT管理</CardTitle>
+                  <CardDescription>新しいGPTの追加や既存のGPTの編集ができます</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={(e) => { e.preventDefault(); editingGpt ? updateGpt() : addGpt(); }} className="space-y-4">
+                    <div>
+                      <Label htmlFor="name">名前</Label>
+                      <Input 
+                        id="name" 
+                        value={editingGpt ? editingGpt.name : newGpt.name}
+                        onChange={(e) => editingGpt ? setEditingGpt({...editingGpt, name: e.target.value}) : setNewGpt({...newGpt, name: e.target.value})}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="description">説明</Label>
+                      <Textarea 
+                        id="description" 
+                        value={editingGpt ? editingGpt.description : newGpt.description}
+                        onChange={(e) => editingGpt ? setEditingGpt({...editingGpt, description: e.target.value}) : setNewGpt({...newGpt, description: e.target.value})}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="url">URL</Label>
+                      <Input 
+                        id="url" 
+                        value={editingGpt ? editingGpt.url : newGpt.url}
+                        onChange={(e) => editingGpt ? setEditingGpt({...editingGpt, url: e.target.value}) : setNewGpt({...newGpt, url: e.target.value})}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="category">カテゴリ</Label>
+                      <Select 
+                        value={editingGpt ? String(editingGpt.category_id) : String(newGpt.category_id)}
+                        onValueChange={(value) => editingGpt ? setEditingGpt({...editingGpt, category_id: Number(value)}) : setNewGpt({...newGpt, category_id: Number(value)})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="カテゴリを選択" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map((category) => (
+                            <SelectItem key={category.id} value={String(category.id)}>{category.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button type="submit">
+                      {editingGpt ? '更新' : '追加'}
                     </Button>
-                  )}
-                </form>
-              </CardContent>
-            </Card>
+                    {editingGpt && (
+                      <Button type="button" variant="outline" onClick={() => setEditingGpt(null)}>
+                        キャンセル
+                      </Button>
+                    )}
+                  </form>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>カテゴリ管理</CardTitle>
+                  <CardDescription>カテゴリの追加、編集、削除ができます</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={(e) => { e.preventDefault(); editingCategory ? updateCategory() : addCategory(); }} className="space-y-4">
+                    <div>
+                      <Label htmlFor="category">カテゴリ名</Label>
+                      <Input 
+                        id="category" 
+                        value={newCategory}
+                        onChange={(e) => setNewCategory(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <Button type="submit">
+                      {editingCategory ? '更新' : '追加'}
+                    </Button>
+                  </form>
+                  <div className="mt-4 space-y-2">
+                    {categories.map((category) => (
+                      <div key={category.id} className="flex items-center justify-between">
+                        <span>{category.name}</span>
+                        <div>
+                          <Button variant="ghost" size="sm" onClick={() => { setEditingCategory(category); setNewCategory(category.name); }}>
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>カテゴリの削除</DialogTitle>
+                                <DialogDescription>
+                                  本当に「{category.name}」カテゴリを削除しますか？この操作は取り消せません。
+                                </DialogDescription>
+                              </DialogHeader>
+                              <DialogFooter>
+                                <Button variant="destructive" onClick={() => removeCategory(category.id)}>削除</Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>登録済みGPTs</CardTitle>
+                  <CardDescription>既存のGPTsを編集または削除できます</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {gpts.map((gpt) => (
+                      <div key={gpt.id} className="flex items-center justify-between">
+                        <span>{gpt.name}</span>
+                        <div>
+                          <Button variant="ghost" size="sm" onClick={() => startEditingGpt(gpt)}>
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>GPTの削除</DialogTitle>
+                                <DialogDescription>
+                                  本当に「{gpt.name}」を削除しますか？この操作は取り消せません。
+                                </DialogDescription>
+                              </DialogHeader>
+                              <DialogFooter>
+                                <Button variant="destructive" onClick={() => deleteGpt(gpt.id)}>削除</Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
             <Card>
               <CardHeader>
-                <CardTitle>カテゴリ管理</CardTitle>
-                <CardDescription>カテゴリの追加、編集、削除ができます</CardDescription>
+                <CardTitle>認証が必要です</CardTitle>
+                <CardDescription>管理機能を使用するには認証コードを入力してください。</CardDescription>
               </CardHeader>
               <CardContent>
-                <form onSubmit={(e) => { e.preventDefault(); editingCategory ? updateCategory() : addCategory(); }} className="space-y-4">
+                <form onSubmit={handleAuth} className="space-y-4">
                   <div>
-                    <Label htmlFor="category">カテゴリ名</Label>
+                    <Label htmlFor="authCode">認証コード</Label>
                     <Input 
-                      id="category" 
-                      value={newCategory}
-                      onChange={(e) => setNewCategory(e.target.value)}
+                      id="authCode" 
+                      type="password"
+                      value={authCode}
+                      onChange={(e) => setAuthCode(e.target.value)}
                       required
                     />
                   </div>
-                  <Button type="submit">
-                    {editingCategory ? '更新' : '追加'}
-                  </Button>
+                  <Button type="submit">認証</Button>
                 </form>
-                <div className="mt-4 space-y-2">
-                  {categories.map((category) => (
-                    <div key={category} className="flex items-center justify-between">
-                      <span>{category}</span>
-                      <div>
-                        <Button variant="ghost" size="sm" onClick={() => { setEditingCategory(category); setNewCategory(category); }}>
-                          <Edit2 className="h-4 w-4" />
-                        </Button>
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>カテゴリの削除</DialogTitle>
-                              <DialogDescription>
-                                本当に「{category}」カテゴリを削除しますか？この操作は取り消せません。
-                              </DialogDescription>
-                            </DialogHeader>
-                            <DialogFooter>
-                              <Button variant="destructive" onClick={() => removeCategory(category)}>削除</Button>
-                            </DialogFooter>
-                          </DialogContent>
-                        </Dialog>
-                      </div>
-                    </div>
-                  ))}
-                </div>
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>登録済みGPTs</CardTitle>
-                <CardDescription>既存のGPTsを編集または削除できます</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {gpts.map((gpt) => (
-                    <div key={gpt.id} className="flex items-center justify-between">
-                      <span>{gpt.name}</span>
-                      <div>
-                        <Button variant="ghost" size="sm" onClick={() => startEditingGpt(gpt)}>
-                          <Edit2 className="h-4 w-4" />
-                        </Button>
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>GPTの削除</DialogTitle>
-                              <DialogDescription>
-                                本当に「{gpt.name}」を削除しますか？この操作は取り消せません。
-                              </DialogDescription>
-                            </DialogHeader>
-                            <DialogFooter>
-                              <Button variant="destructive" onClick={() => deleteGpt(gpt.id)}>削除</Button>
-                            </DialogFooter>
-                          </DialogContent>
-                        </Dialog>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>
