@@ -32,8 +32,6 @@ export function GpTs推奨リスト() {
   const [editingGpt, setEditingGpt] = useState<GPT | null>(null);
   const [newCategory, setNewCategory] = useState('');
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState('');
 
   const filteredAndGroupedGpts = useMemo(() => {
     console.log('Filtering and grouping GPTs. Current gpts:', gpts);
@@ -161,12 +159,13 @@ export function GpTs推奨リスト() {
 
   const removeCategory = async (categoryToRemove: string) => {
     try {
-      const response = await fetch(`/api/categories?name=${encodeURIComponent(categoryToRemove)}`, {
+      const categoryId = categories.findIndex(cat => cat === categoryToRemove) + 1;
+      const response = await fetch(`/api/categories?id=${categoryId}`, {
         method: 'DELETE',
       });
 
       if (!response.ok) {
-        throw new Error('Failed to delete category');
+        throw new Error('カテゴリの削除に失敗しました');
       }
 
       setCategories(categories.filter(c => c !== categoryToRemove));
@@ -175,7 +174,7 @@ export function GpTs推奨リスト() {
       // カテゴリ削除後にデータを再取得
       fetchData();
     } catch (error) {
-      console.error('Error deleting category:', error);
+      console.error('カテゴリの削除中にエラーが発生しました:', error);
     }
   };
 
@@ -264,16 +263,6 @@ export function GpTs推奨リスト() {
     }
   };
 
-  const handleAuthentication = () => {
-    if (password === '0411') {
-      setIsAuthenticated(true);
-      setActiveTab('manage');
-    } else {
-      alert('パスワードが間違っています。');
-    }
-    setPassword('');
-  };
-
   return (
     <div className="container mx-auto p-4 max-w-6xl">
       <h1 className="text-4xl font-bold mb-8 text-center">ChatGPT GPTs おすすめリスト</h1>
@@ -281,14 +270,7 @@ export function GpTs推奨リスト() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-8">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="browse">閲覧</TabsTrigger>
-          <TabsTrigger value="manage" onClick={(e) => {
-            if (!isAuthenticated) {
-              e.preventDefault();
-              setActiveTab('browse');
-            }
-          }}>
-            管理
-          </TabsTrigger>
+          <TabsTrigger value="manage">管理</TabsTrigger>
         </TabsList>
         <TabsContent value="browse">
           <Card>
@@ -357,189 +339,159 @@ export function GpTs推奨リスト() {
           </Card>
         </TabsContent>
         <TabsContent value="manage">
-          {isAuthenticated ? (
-            <div className="grid gap-8 md:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle>GPT管理</CardTitle>
-                  <CardDescription>新しいGPTの追加や既存のGPTの編集ができます</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form onSubmit={(e) => { e.preventDefault(); editingGpt ? updateGpt() : addGpt(); }} className="space-y-4">
-                    <div>
-                      <Label htmlFor="name">名前</Label>
-                      <Input 
-                        id="name" 
-                        value={editingGpt ? editingGpt.name : newGpt.name}
-                        onChange={(e) => editingGpt ? setEditingGpt({...editingGpt, name: e.target.value}) : setNewGpt({...newGpt, name: e.target.value})}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="description">説明</Label>
-                      <Textarea 
-                        id="description" 
-                        value={editingGpt ? editingGpt.description : newGpt.description}
-                        onChange={(e) => editingGpt ? setEditingGpt({...editingGpt, description: e.target.value}) : setNewGpt({...newGpt, description: e.target.value})}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="url">URL</Label>
-                      <Input 
-                        id="url" 
-                        value={editingGpt ? editingGpt.url : newGpt.url}
-                        onChange={(e) => editingGpt ? setEditingGpt({...editingGpt, url: e.target.value}) : setNewGpt({...newGpt, url: e.target.value})}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="category">カテゴリ</Label>
-                      <Select 
-                        value={editingGpt ? editingGpt.category : newGpt.category}
-                        onValueChange={(value) => editingGpt ? setEditingGpt({...editingGpt, category: value}) : setNewGpt({...newGpt, category: value})}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="カテゴリを選択" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.map((category) => (
-                            <SelectItem key={category} value={category}>{category}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Button type="submit">
-                      {editingGpt ? '更新' : '追加'}
-                    </Button>
-                    {editingGpt && (
-                      <Button type="button" variant="outline" onClick={() => setEditingGpt(null)}>
-                        キャンセル
-                      </Button>
-                    )}
-                  </form>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle>カテゴリ管理</CardTitle>
-                  <CardDescription>カテゴリの追加、編集、削除ができます</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form onSubmit={(e) => { e.preventDefault(); editingCategory ? updateCategory() : addCategory(); }} className="space-y-4">
-                    <div>
-                      <Label htmlFor="category">カテゴリ名</Label>
-                      <Input 
-                        id="category" 
-                        value={newCategory}
-                        onChange={(e) => setNewCategory(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <Button type="submit">
-                      {editingCategory ? '更新' : '追加'}
-                    </Button>
-                  </form>
-                  <div className="mt-4 space-y-2">
-                    {categories.map((category) => (
-                      <div key={category} className="flex items-center justify-between">
-                        <span>{category}</span>
-                        <div>
-                          <Button variant="ghost" size="sm" onClick={() => { setEditingCategory(category); setNewCategory(category); }}>
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button variant="ghost" size="sm">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>カテゴリの削除</DialogTitle>
-                                <DialogDescription>
-                                  本当に「{category}」カテゴリを削除しますか？この操作は取り消せません。
-                                </DialogDescription>
-                              </DialogHeader>
-                              <DialogFooter>
-                                <Button variant="destructive" onClick={() => removeCategory(category)}>削除</Button>
-                              </DialogFooter>
-                            </DialogContent>
-                          </Dialog>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle>登録済みGPTs</CardTitle>
-                  <CardDescription>既存のGPTsを編集または削除できます</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {gpts.map((gpt) => (
-                      <div key={gpt.id} className="flex items-center justify-between">
-                        <span>{gpt.name}</span>
-                        <div>
-                          <Button variant="ghost" size="sm" onClick={() => startEditingGpt(gpt)}>
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button variant="ghost" size="sm">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>GPTの削除</DialogTitle>
-                                <DialogDescription>
-                                  本当に「{gpt.name}」を削除しますか？この操作は取り消せません。
-                                </DialogDescription>
-                              </DialogHeader>
-                              <DialogFooter>
-                                <Button variant="destructive" onClick={() => deleteGpt(gpt.id)}>削除</Button>
-                              </DialogFooter>
-                            </DialogContent>
-                          </Dialog>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            <Dialog open={activeTab === 'manage'} onOpenChange={(open) => !open && setActiveTab('browse')}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>管理者認証</DialogTitle>
-                  <DialogDescription>
-                    管理タブにアクセスするにはパスワードを入力してください。
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="password" className="text-right">
-                      パスワード
-                    </Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="col-span-3"
+          <div className="grid gap-8 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>GPT管理</CardTitle>
+                <CardDescription>新しいGPTの追加や既存のGPTの編集ができます</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={(e) => { e.preventDefault(); editingGpt ? updateGpt() : addGpt(); }} className="space-y-4">
+                  <div>
+                    <Label htmlFor="name">名前</Label>
+                    <Input 
+                      id="name" 
+                      value={editingGpt ? editingGpt.name : newGpt.name}
+                      onChange={(e) => editingGpt ? setEditingGpt({...editingGpt, name: e.target.value}) : setNewGpt({...newGpt, name: e.target.value})}
+                      required
                     />
                   </div>
+                  <div>
+                    <Label htmlFor="description">説明</Label>
+                    <Textarea 
+                      id="description" 
+                      value={editingGpt ? editingGpt.description : newGpt.description}
+                      onChange={(e) => editingGpt ? setEditingGpt({...editingGpt, description: e.target.value}) : setNewGpt({...newGpt, description: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="url">URL</Label>
+                    <Input 
+                      id="url" 
+                      value={editingGpt ? editingGpt.url : newGpt.url}
+                      onChange={(e) => editingGpt ? setEditingGpt({...editingGpt, url: e.target.value}) : setNewGpt({...newGpt, url: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="category">カテゴリ</Label>
+                    <Select 
+                      value={editingGpt ? editingGpt.category : newGpt.category}
+                      onValueChange={(value) => editingGpt ? setEditingGpt({...editingGpt, category: value}) : setNewGpt({...newGpt, category: value})}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="カテゴリを選択" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem key={category} value={category}>{category}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button type="submit">
+                    {editingGpt ? '更新' : '追加'}
+                  </Button>
+                  {editingGpt && (
+                    <Button type="button" variant="outline" onClick={() => setEditingGpt(null)}>
+                      キャンセル
+                    </Button>
+                  )}
+                </form>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>カテゴリ管理</CardTitle>
+                <CardDescription>カテゴリの追加、編集、削除ができます</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={(e) => { e.preventDefault(); editingCategory ? updateCategory() : addCategory(); }} className="space-y-4">
+                  <div>
+                    <Label htmlFor="category">カテゴリ名</Label>
+                    <Input 
+                      id="category" 
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <Button type="submit">
+                    {editingCategory ? '更新' : '追加'}
+                  </Button>
+                </form>
+                <div className="mt-4 space-y-2">
+                  {categories.map((category) => (
+                    <div key={category} className="flex items-center justify-between">
+                      <span>{category}</span>
+                      <div>
+                        <Button variant="ghost" size="sm" onClick={() => { setEditingCategory(category); setNewCategory(category); }}>
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>カテゴリの削除</DialogTitle>
+                              <DialogDescription>
+                                本当に「{category}」カテゴリを削除しますか？この操作は取り消せません。
+                              </DialogDescription>
+                            </DialogHeader>
+                            <DialogFooter>
+                              <Button variant="destructive" onClick={() => removeCategory(category)}>削除</Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <DialogFooter>
-                  <Button onClick={handleAuthentication}>認証</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>登録済みGPTs</CardTitle>
+                <CardDescription>既存のGPTsを編集または削除できます</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {gpts.map((gpt) => (
+                    <div key={gpt.id} className="flex items-center justify-between">
+                      <span>{gpt.name}</span>
+                      <div>
+                        <Button variant="ghost" size="sm" onClick={() => startEditingGpt(gpt)}>
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>GPTの削除</DialogTitle>
+                              <DialogDescription>
+                                本当に「{gpt.name}」を削除しますか？この操作は取り消せません。
+                              </DialogDescription>
+                            </DialogHeader>
+                            <DialogFooter>
+                              <Button variant="destructive" onClick={() => deleteGpt(gpt.id)}>削除</Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
